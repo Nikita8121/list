@@ -1,10 +1,21 @@
-import { useMemo, useRef, useState } from 'react';
+import {
+  DetailedHTMLProps,
+  HTMLProps,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   UncontrolledTreeEnvironment,
   Tree,
   StaticTreeDataProvider,
   TreeItem,
   DraggingPosition,
+  TreeEnvironmentRef,
+  TreeRef,
+  TreeInformation,
 } from 'react-complex-tree';
 
 type Node = {
@@ -16,9 +27,9 @@ type NodeList = Node[];
 
 type TreeItems = { [key: string]: TreeItem<string> };
 
-/* const generateItem = (index: number): TreeItem<string> => ({
+const generateItem = (index: number): TreeItem<string> => ({
   index: `child${index}`,
-  isFolder:  true,
+  isFolder: true,
   children: [],
   data: `Child item ${index}`,
 });
@@ -30,7 +41,24 @@ const mockItems: TreeItems = {
     children: Array.from({ length: 50 }, (_, i) => `child${i + 1}`),
     data: 'Root item',
   },
-}; */
+};
+
+const renderTreeContainer = (props: {
+  children: ReactNode;
+  containerProps: HTMLProps<unknown>;
+  info: TreeInformation;
+}) => {
+  // Create a new props object with the element type and the custom class name
+
+  return (
+    <div
+      style={{ minHeight: '30px', position: 'relative' }}
+      className="rct-tree-root"
+    >
+      {props.children}
+    </div>
+  );
+};
 
 const nodeListToTreeItems = (nodeList: NodeList): TreeItems => {
   const treeItems: TreeItems = {
@@ -88,10 +116,110 @@ const treeListItemsToNodeList = (items: TreeItems): NodeList => {
   return nodeList;
 };
 
+const useScrollbarFollowMouse = (isDragging: boolean) => {
+  const draggableRef = useRef<HTMLDivElement>(null);
+  const mouseCoords = useRef({
+    startX: 0,
+    startY: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+  });
+  let timeout: number | undefined = undefined;
+  /* const handleDragStart = (e) => {
+    if (!draggableRef.current) return;
+    const slider = draggableRef.current?.children[0];
+    if (!slider) return;
+
+    const startX = e.pageX - slider.offsetLeft;
+    const startY = e.pageY - slider.offsetTop;
+    const scrollLeft = slider.scrollLeft;
+    const scrollTop = slider.scrollTop;
+    mouseCoords.current = { startX, startY, scrollLeft, scrollTop };
+    setIsMouseDown(true);
+    document.body.style.cursor = 'grabbing';
+  }; */
+  /* const handleDragEnd = () => {
+    setIsMouseDown(false);
+    if (!ourRef.current) return;
+    document.body.style.cursor = 'default';
+  }; */
+  const handleDrag = (e) => {
+    e.preventDefault();
+
+    if (!isDragging) return;
+
+    timeout = setTimeout(() => {
+      if (!draggableRef.current) return;
+      const slider = draggableRef.current;
+
+      const divOffsetLeft = draggableRef.current?.offsetLeft || 0;
+      const divOffsetRight = draggableRef.current?.offsetTop || 0;
+      const x = e.clientX - divOffsetLeft; // get the mouse x position relative to the div
+      const y = e.clientY - divOffsetRight;
+      const walkX = x - mouseCoords.current.startX;
+      const walkY = y - mouseCoords.current.startY;
+      slider.scrollLeft = mouseCoords.current.scrollLeft + walkX;
+      slider.scrollTop = mouseCoords.current.scrollTop + walkY;
+    }, 500);
+  };
+
+  useEffect(() => {
+    if (!draggableRef.current) return;
+
+    draggableRef.current?.addEventListener('mousemove', function (e) {
+      // add mousemove event listener
+      const divOffsetLeft = draggableRef.current?.offsetLeft || 0;
+      const divOffsetRight = draggableRef.current?.offsetTop || 0;
+
+      const x = e.clientX - divOffsetLeft; // get the mouse x position relative to the div
+      const y = e.clientY - divOffsetRight; // get the mouse y position relative to the div
+      console.log('x: ' + x + ', y: ' + y); // print the coordinates
+    });
+
+    draggableRef.current?.addEventListener('mousemove', handleDrag, false);
+
+    return () => {
+      draggableRef.current?.removeEventListener('mousemove', handleDrag);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) clearTimeout(timeout);
+  }, [isDragging]);
+
+  return { draggableRef };
+};
+
 export const TreeList = () => {
-  /* for (let i = 1; i <= 50; i++) {
+  /*   const draggableRef = useRef<HTMLDivElement>(null);
+   */
+  const environment = useRef<TreeEnvironmentRef<string, 'expandedItems'>>(null);
+  const tree = useRef<TreeRef<string>>(null);
+
+  /*   const tree = useRef<TreeRef<string>>();
+   */
+ /*  for (let i = 1; i <= 50; i++) {
     mockItems[`child${i}`] = generateItem(i);
   } */
+
+
+  useEffect(() => {
+    if (!environment.current || !tree.current) return;
+
+    const treeEnv = environment.current;
+    console.log(treeEnv);
+    treeEnv.dragAndDropContext.onStartDraggingItems = () => {
+      console.log('dragging');
+      setIsDraggingItem(true);
+    };
+
+    setInterval(() => {
+      const isDragging =
+        !!tree.current?.dragAndDropContext?.draggingItems?.length;
+
+      setIsDraggingItem(isDragging);
+    }, 1000);
+  }, []);
 
   const storedTree = useRef<string | null>(localStorage.getItem('tree'));
   const mockItems: TreeItems = useMemo(
@@ -115,6 +243,7 @@ export const TreeList = () => {
     if (target.targetType === 'item')
       mockItems[target.targetItem].isFolder = true;
     handleTreeChange();
+    setIsDraggingItem(false);
   };
 
   const handleSaveChanges = () => {
@@ -129,8 +258,9 @@ export const TreeList = () => {
       {isChangesApplied && (
         <button onClick={handleSaveChanges}>Save Changes</button>
       )}
-      <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+      <div>
         <UncontrolledTreeEnvironment
+          ref={environment}
           dataProvider={
             new StaticTreeDataProvider(mockItems, (item, data) => {
               return {
@@ -154,7 +284,12 @@ export const TreeList = () => {
           onRenameItem={handleTreeChange}
           onDrop={handleDrop}
         >
-          <Tree treeId="tree-1" rootItem="root" treeLabel="Tree Example" />
+          <Tree
+            ref={tree}
+            treeId="tree-1"
+            rootItem="root"
+            treeLabel="Tree Example"
+          />
         </UncontrolledTreeEnvironment>
       </div>
     </>
